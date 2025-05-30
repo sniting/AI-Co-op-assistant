@@ -3,7 +3,6 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <title>AI Co-op Assistant Dashboard</title>
     <style>
         * {
@@ -210,13 +209,44 @@
             font-size: 0.9em;
         }
 
-        .error-message {
-            background: #ffebee;
-            color: #c62828;
-            padding: 15px;
-            border-radius: 8px;
-            margin-top: 10px;
+        .error-modal {
             display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            z-index: 1001;
+            max-width: 500px;
+            text-align: center;
+        }
+
+        .error-modal.show {
+            display: block;
+        }
+
+        .error-modal h3 {
+            color: #c62828;
+            margin-bottom: 20px;
+        }
+
+        .error-modal p {
+            color: #666;
+            margin-bottom: 20px;
+            line-height: 1.6;
+        }
+
+        .error-modal button {
+            background: #667eea;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
         }
 
         @keyframes spin {
@@ -282,7 +312,6 @@
                     <span class="tag" onclick="fillTemplate('Amazon', 'Data Analyst Intern')">Amazon DA</span>
                     <span class="tag" onclick="fillTemplate('Meta', 'Data Analyst Intern')">Meta DA</span>
                 </div>
-                <div id="cl_error" class="error-message"></div>
             </div>
 
             <!-- NEW: Tailor Resume with Toggle -->
@@ -318,7 +347,6 @@
                         <li>Proper date alignment</li>
                     </ul>
                 </div>
-                <div id="tr_error" class="error-message"></div>
             </div>
 
             <!-- Interview Prep -->
@@ -336,7 +364,6 @@
                     <h4>Pro Tip:</h4>
                     <p>Practice with mixed questions before drilling down on your weak areas.</p>
                 </div>
-                <div id="ip_error" class="error-message"></div>
             </div>
 
             <!-- Company Research -->
@@ -353,7 +380,6 @@
                         <li>Interview process</li>
                     </ul>
                 </div>
-                <div id="cr_error" class="error-message"></div>
             </div>
 
             <!-- Follow-up Email -->
@@ -367,7 +393,6 @@
                     <option value="Thank You Note">Thank You Note</option>
                 </select>
                 <button onclick="generateFollowUp()">Generate Follow-up Email</button>
-                <div id="fu_error" class="error-message"></div>
             </div>
 
             <!-- Networking Message -->
@@ -381,7 +406,6 @@
                     <h4>Tip:</h4>
                     <p>Keep it under 300 characters for best response rates.</p>
                 </div>
-                <div id="nm_error" class="error-message"></div>
             </div>
 
         </div> <!-- end grid -->
@@ -391,6 +415,19 @@
             <div class="spinner"></div>
             <h3>Processing…</h3>
             <p>This may take 10–20 seconds</p>
+        </div>
+
+        <!-- Error Modal -->
+        <div id="errorModal" class="error-modal">
+            <h3>⚠️ Connection Error</h3>
+            <p id="errorMessage">Unable to connect to the server. This might be due to browser security restrictions when running from GitHub Pages.</p>
+            <p><strong>Solutions:</strong></p>
+            <ol style="text-align: left; margin-bottom: 20px;">
+                <li>Download the HTML file and run it locally</li>
+                <li>Use a browser extension to disable CORS temporarily</li>
+                <li>Contact support for alternative hosting options</li>
+            </ol>
+            <button onclick="closeErrorModal()">Close</button>
         </div>
 
     </div> <!-- end container -->
@@ -460,26 +497,20 @@
         function showLoading() {
             document.getElementById('loading').classList.add('show');
         }
-        
         function hideLoading() {
             document.getElementById('loading').classList.remove('show');
         }
 
-        // Clear all error messages
-        function clearErrors() {
-            document.querySelectorAll('.error-message').forEach(el => {
-                el.style.display = 'none';
-                el.textContent = '';
-            });
+        // Error modal functions
+        function showErrorModal(message) {
+            if (message) {
+                document.getElementById('errorMessage').textContent = message;
+            }
+            document.getElementById('errorModal').classList.add('show');
         }
 
-        // Show error message
-        function showError(elementId, message) {
-            const errorEl = document.getElementById(elementId);
-            if (errorEl) {
-                errorEl.textContent = message;
-                errorEl.style.display = 'block';
-            }
+        function closeErrorModal() {
+            document.getElementById('errorModal').classList.remove('show');
         }
 
         // Handle file selection and extract text
@@ -504,11 +535,9 @@
             }
         }
 
-        // Enhanced request helper with better error handling
+        // Core JSON-based request helper with improved error handling
         async function makeRequest(action, data) {
-            clearErrors();
             showLoading();
-            
             try {
                 const response = await fetch(API_URL, {
                     method: 'POST',
@@ -516,22 +545,39 @@
                         'Content-Type': 'application/json',
                         'Accept': 'text/html'
                     },
-                    mode: 'cors',
                     body: JSON.stringify({ action, data })
                 });
                 
                 if (!response.ok) {
-                    throw new Error(`Request failed: ${response.status} ${response.statusText}`);
+                    throw new Error(`Server error: ${response.status} ${response.statusText}`);
                 }
                 
-                const html = await response.text();
+                const contentType = response.headers.get('content-type');
+                let html;
                 
-                // Check if we received valid HTML
-                if (!html || html.trim().length === 0) {
-                    throw new Error('Received empty response from server');
+                if (contentType && contentType.includes('text/html')) {
+                    html = await response.text();
+                } else {
+                    // Try to parse as JSON first
+                    try {
+                        const jsonData = await response.json();
+                        if (jsonData.html) {
+                            html = jsonData.html;
+                        } else {
+                            throw new Error('Invalid response format');
+                        }
+                    } catch {
+                        // If not JSON, treat as HTML
+                        html = await response.text();
+                    }
                 }
                 
-                // Open in new window/tab
+                // Check if we got valid HTML
+                if (!html || html.trim() === '' || !html.includes('<!DOCTYPE')) {
+                    throw new Error('Empty or invalid response received');
+                }
+                
+                // Open in new window
                 const win = window.open('', '_blank');
                 if (!win) {
                     throw new Error('Popup blocked. Please allow popups for this site.');
@@ -543,21 +589,11 @@
             } catch (err) {
                 console.error('Request error:', err);
                 
-                // Show specific error based on action
-                const errorMap = {
-                    'generate_cover_letter': 'cl_error',
-                    'tailor_resume': 'tr_error',
-                    'interview_prep': 'ip_error',
-                    'company_research': 'cr_error',
-                    'follow_up_email': 'fu_error',
-                    'networking_message': 'nm_error'
-                };
-                
-                const errorElementId = errorMap[action];
-                if (errorElementId) {
-                    showError(errorElementId, `Error: ${err.message}. Please check your connection and try again.`);
+                // Check if it's a CORS error
+                if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
+                    showErrorModal('Unable to connect to the server. This is likely due to CORS restrictions when running from GitHub Pages. Please download this HTML file and run it locally from your computer.');
                 } else {
-                    alert('Error: ' + err.message);
+                    showErrorModal('Error: ' + err.message);
                 }
             } finally {
                 hideLoading();
@@ -568,10 +604,7 @@
         function generateCoverLetter() {
             const company = document.getElementById('cl_company').value.trim();
             const position = document.getElementById('cl_position').value.trim();
-            if (!company || !position) {
-                showError('cl_error', 'Please enter both company name and position.');
-                return;
-            }
+            if (!company || !position) return alert('Please enter company and position.');
             const userInfo = JSON.parse(localStorage.getItem('coopAssistantUserInfo') || '{}');
             makeRequest('generate_cover_letter', {
                 company, position,
@@ -592,20 +625,17 @@
             if (currentInputMethod === 'upload') {
                 resumeContent = extractedResumeContent;
                 if (!resumeContent) {
-                    showError('tr_error', 'Please upload your master resume (.docx format)');
-                    return;
+                    return alert('Please upload your master resume (.docx format)');
                 }
             } else {
                 resumeContent = document.getElementById('resumeText').value.trim();
                 if (!resumeContent) {
-                    showError('tr_error', 'Please paste your master resume content');
-                    return;
+                    return alert('Please paste your master resume content');
                 }
             }
             
             if (!jd) {
-                showError('tr_error', 'Please enter a job description');
-                return;
+                return alert('Please enter a job description');
             }
             
             const userInfo = JSON.parse(localStorage.getItem('coopAssistantUserInfo') || '{}');
@@ -625,19 +655,13 @@
             const company = document.getElementById('ip_company').value.trim();
             const position = document.getElementById('ip_position').value.trim();
             const type = document.getElementById('ip_type').value;
-            if (!company || !position) {
-                showError('ip_error', 'Please enter both company name and position.');
-                return;
-            }
+            if (!company || !position) return alert('Please enter company and position.');
             makeRequest('interview_prep', { company, position, type });
         }
 
         function researchCompany() {
             const company = document.getElementById('cr_company').value.trim();
-            if (!company) {
-                showError('cr_error', 'Please enter a company name.');
-                return;
-            }
+            if (!company) return alert('Enter a company name.');
             makeRequest('company_research', { company });
         }
 
@@ -645,10 +669,7 @@
             const company = document.getElementById('fu_company').value.trim();
             const position = document.getElementById('fu_position').value.trim();
             const context = document.getElementById('fu_context').value;
-            if (!company || !position) {
-                showError('fu_error', 'Please enter both company name and position.');
-                return;
-            }
+            if (!company || !position) return alert('Please enter company and position.');
             makeRequest('follow_up_email', { company, position, context });
         }
 
@@ -656,10 +677,7 @@
             const company = document.getElementById('nm_company').value.trim();
             const role = document.getElementById('nm_role').value.trim();
             const background = document.getElementById('nm_background').value.trim();
-            if (!company || !role) {
-                showError('nm_error', 'Please enter both company name and role.');
-                return;
-            }
+            if (!company || !role) return alert('Please enter a company and role.');
             makeRequest('networking_message', { company, role, background });
         }
 
