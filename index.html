@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <title>AI Co-op Assistant Dashboard</title>
     <style>
         * {
@@ -209,6 +210,15 @@
             font-size: 0.9em;
         }
 
+        .error-message {
+            background: #ffebee;
+            color: #c62828;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 10px;
+            display: none;
+        }
+
         @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
@@ -272,6 +282,7 @@
                     <span class="tag" onclick="fillTemplate('Amazon', 'Data Analyst Intern')">Amazon DA</span>
                     <span class="tag" onclick="fillTemplate('Meta', 'Data Analyst Intern')">Meta DA</span>
                 </div>
+                <div id="cl_error" class="error-message"></div>
             </div>
 
             <!-- NEW: Tailor Resume with Toggle -->
@@ -307,6 +318,7 @@
                         <li>Proper date alignment</li>
                     </ul>
                 </div>
+                <div id="tr_error" class="error-message"></div>
             </div>
 
             <!-- Interview Prep -->
@@ -324,6 +336,7 @@
                     <h4>Pro Tip:</h4>
                     <p>Practice with mixed questions before drilling down on your weak areas.</p>
                 </div>
+                <div id="ip_error" class="error-message"></div>
             </div>
 
             <!-- Company Research -->
@@ -340,6 +353,7 @@
                         <li>Interview process</li>
                     </ul>
                 </div>
+                <div id="cr_error" class="error-message"></div>
             </div>
 
             <!-- Follow-up Email -->
@@ -353,6 +367,7 @@
                     <option value="Thank You Note">Thank You Note</option>
                 </select>
                 <button onclick="generateFollowUp()">Generate Follow-up Email</button>
+                <div id="fu_error" class="error-message"></div>
             </div>
 
             <!-- Networking Message -->
@@ -366,6 +381,7 @@
                     <h4>Tip:</h4>
                     <p>Keep it under 300 characters for best response rates.</p>
                 </div>
+                <div id="nm_error" class="error-message"></div>
             </div>
 
         </div> <!-- end grid -->
@@ -444,8 +460,26 @@
         function showLoading() {
             document.getElementById('loading').classList.add('show');
         }
+        
         function hideLoading() {
             document.getElementById('loading').classList.remove('show');
+        }
+
+        // Clear all error messages
+        function clearErrors() {
+            document.querySelectorAll('.error-message').forEach(el => {
+                el.style.display = 'none';
+                el.textContent = '';
+            });
+        }
+
+        // Show error message
+        function showError(elementId, message) {
+            const errorEl = document.getElementById(elementId);
+            if (errorEl) {
+                errorEl.textContent = message;
+                errorEl.style.display = 'block';
+            }
         }
 
         // Handle file selection and extract text
@@ -470,22 +504,61 @@
             }
         }
 
-        // Core JSON-based request helper
+        // Enhanced request helper with better error handling
         async function makeRequest(action, data) {
+            clearErrors();
             showLoading();
+            
             try {
                 const response = await fetch(API_URL, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Accept': 'text/html'
+                    },
+                    mode: 'cors',
                     body: JSON.stringify({ action, data })
                 });
-                if (!response.ok) throw new Error('Request failed: ' + response.statusText);
+                
+                if (!response.ok) {
+                    throw new Error(`Request failed: ${response.status} ${response.statusText}`);
+                }
+                
                 const html = await response.text();
+                
+                // Check if we received valid HTML
+                if (!html || html.trim().length === 0) {
+                    throw new Error('Received empty response from server');
+                }
+                
+                // Open in new window/tab
                 const win = window.open('', '_blank');
+                if (!win) {
+                    throw new Error('Popup blocked. Please allow popups for this site.');
+                }
+                
                 win.document.write(html);
                 win.document.close();
+                
             } catch (err) {
-                alert('Error: ' + err.message);
+                console.error('Request error:', err);
+                
+                // Show specific error based on action
+                const errorMap = {
+                    'generate_cover_letter': 'cl_error',
+                    'tailor_resume': 'tr_error',
+                    'interview_prep': 'ip_error',
+                    'company_research': 'cr_error',
+                    'follow_up_email': 'fu_error',
+                    'networking_message': 'nm_error'
+                };
+                
+                const errorElementId = errorMap[action];
+                if (errorElementId) {
+                    showError(errorElementId, `Error: ${err.message}. Please check your connection and try again.`);
+                } else {
+                    alert('Error: ' + err.message);
+                }
             } finally {
                 hideLoading();
             }
@@ -495,7 +568,10 @@
         function generateCoverLetter() {
             const company = document.getElementById('cl_company').value.trim();
             const position = document.getElementById('cl_position').value.trim();
-            if (!company || !position) return alert('Please enter company and position.');
+            if (!company || !position) {
+                showError('cl_error', 'Please enter both company name and position.');
+                return;
+            }
             const userInfo = JSON.parse(localStorage.getItem('coopAssistantUserInfo') || '{}');
             makeRequest('generate_cover_letter', {
                 company, position,
@@ -516,17 +592,20 @@
             if (currentInputMethod === 'upload') {
                 resumeContent = extractedResumeContent;
                 if (!resumeContent) {
-                    return alert('Please upload your master resume (.docx format)');
+                    showError('tr_error', 'Please upload your master resume (.docx format)');
+                    return;
                 }
             } else {
                 resumeContent = document.getElementById('resumeText').value.trim();
                 if (!resumeContent) {
-                    return alert('Please paste your master resume content');
+                    showError('tr_error', 'Please paste your master resume content');
+                    return;
                 }
             }
             
             if (!jd) {
-                return alert('Please enter a job description');
+                showError('tr_error', 'Please enter a job description');
+                return;
             }
             
             const userInfo = JSON.parse(localStorage.getItem('coopAssistantUserInfo') || '{}');
@@ -546,13 +625,19 @@
             const company = document.getElementById('ip_company').value.trim();
             const position = document.getElementById('ip_position').value.trim();
             const type = document.getElementById('ip_type').value;
-            if (!company || !position) return alert('Please enter company and position.');
+            if (!company || !position) {
+                showError('ip_error', 'Please enter both company name and position.');
+                return;
+            }
             makeRequest('interview_prep', { company, position, type });
         }
 
         function researchCompany() {
             const company = document.getElementById('cr_company').value.trim();
-            if (!company) return alert('Enter a company name.');
+            if (!company) {
+                showError('cr_error', 'Please enter a company name.');
+                return;
+            }
             makeRequest('company_research', { company });
         }
 
@@ -560,7 +645,10 @@
             const company = document.getElementById('fu_company').value.trim();
             const position = document.getElementById('fu_position').value.trim();
             const context = document.getElementById('fu_context').value;
-            if (!company || !position) return alert('Please enter company and position.');
+            if (!company || !position) {
+                showError('fu_error', 'Please enter both company name and position.');
+                return;
+            }
             makeRequest('follow_up_email', { company, position, context });
         }
 
@@ -568,7 +656,10 @@
             const company = document.getElementById('nm_company').value.trim();
             const role = document.getElementById('nm_role').value.trim();
             const background = document.getElementById('nm_background').value.trim();
-            if (!company || !role) return alert('Please enter a company and role.');
+            if (!company || !role) {
+                showError('nm_error', 'Please enter both company name and role.');
+                return;
+            }
             makeRequest('networking_message', { company, role, background });
         }
 
